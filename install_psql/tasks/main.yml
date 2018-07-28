@@ -1,0 +1,38 @@
+- name: install repo
+  yum: name=https://download.postgresql.org/pub/repos/yum/9.4/redhat/rhel-7-x86_64/pgdg-centos94-9.4-3.noarch.rpm
+
+- name: install psql
+  yum: name=postgresql94-server
+
+- name: check for pgdata directory
+  stat: path={{ postgresql_pgdata }}/base
+  register: pgdata_stat
+  failed_when: false
+
+- name: initialize database 
+  command: /usr/pgsql-{{ postgresql_version }}/bin/postgresql{{ postgresql_version | replace('.', '') }}-setup initdb
+
+- name: create conf.d
+  file: path={{ postgresql_conf_dir }}/conf.d state=directory owner=postgres group=postgres
+
+- name: set conf.d include in postgresql.conf
+  lineinfile: line="include_dir 'conf.d'" dest={{ postgresql_conf_dir }}/postgresql.conf backup=yes
+  notify: restart postgresql
+  
+- name: include ansible_postgresql.conf in postgresql.conf
+  lineinfile: line="include 'conf.d/ansible_postgresql.conf'" dest={{ postgresql_conf_dir }}/postgresql.conf backup=yes
+  notify: restart postgresql
+
+- name: set config options
+  template: src=ansible_postgresql.conf.j2 dest={{ postgresql_conf_dir }}/conf.d/ansible_postgresql.conf owner=postgres group=postgres backup=yes
+  notify: restart postgresql
+
+- name: install pg_hba.conf
+  template: src=pg_hba.conf.j2 dest={{ postgresql_conf_dir }}/pg_hba.conf owner=postgres group=postgres mode=0400 backup=yes
+  notify: restart postgresql
+
+- include: backup.yml
+  when: postgresql_backup_dir is defined
+
+- name: check for running postgres
+  service: name={{ postgresql_service_name }} enabled=yes state=started
